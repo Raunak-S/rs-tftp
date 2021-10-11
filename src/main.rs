@@ -1,3 +1,5 @@
+use byteorder::{BigEndian, ReadBytesExt};
+use std::fs::File;
 use std::io::{self, Write};
 use std::net::UdpSocket;
 use structopt::StructOpt;
@@ -25,13 +27,32 @@ impl<'a> Cmd<'a> {
     }
 }
 
+fn get_opcode(packet: &[u8]) -> u16 {
+    let mut slice = &packet[..2];
+    slice.read_u16::<BigEndian>().unwrap()
+}
+
+fn get_block_num(packet: &[u8]) -> u16 {
+    let mut slice = &packet[2..4];
+    slice.read_u16::<BigEndian>().unwrap()
+}
+
+// TODO: find a better way to read data up to, but not including, the null terminator
+fn get_data(packet: &[u8]) -> String {
+    let mut data = String::from_utf8(packet[4..].to_vec()).unwrap();
+    match data.find('\0') {
+        None => data,
+        Some(index) => {
+            let _ = data.split_off(index);
+            data
+        }
+    }
+}
+
 fn main() {
     let args = Cli::from_args();
 
     let socket = UdpSocket::bind("0.0.0.0:0").unwrap();
-    socket
-        .connect(format!("{}:{}", args.destination, args.port))
-        .unwrap();
 
     loop {
         print!("tftp> ");
@@ -49,7 +70,7 @@ fn main() {
             Cmd::from_str(split_input[0], split_input[1..split_input.len()].to_vec()).unwrap();
 
         match cmd {
-            Cmd::Get(args) => {
+            Cmd::Get(argv) => {
                 println!("Received get command");
 
                 // TODO: iterate through all filenames in args instead of using only the first argument
@@ -57,15 +78,42 @@ fn main() {
                 // TODO: add support for the modes other than octet: netascii and mail
 
                 let mut packet = vec![0u8, 1u8];
-                let mut filename = String::from(args[0]);
+                let mut filename = String::from(argv[0]);
                 filename.push_str("\0");
                 let mut mode = String::from("octet");
                 mode.push_str("\0");
                 packet.extend_from_slice(filename.as_bytes());
                 packet.extend_from_slice(mode.as_bytes());
+
+                socket
+                    .send_to(&packet, format!("{}:{}", args.destination, args.port))
+                    .unwrap();
+
+                filename.pop().unwrap();
+                let mut file = File::create(filename).unwrap();
+
+                loop {
+                    let mut buf = [0u8; 512];
+                    let (amt, src) = socket.recv_from(&mut buf).unwrap();
+
+                    file.write_all(get_data(&buf).as_bytes()).unwrap();
+
+                    let mut ack = [0u8, 4u8, 0u8, 0u8];
+                    let mut i = 2;
+                    for byte in get_block_num(&buf).to_be_bytes() {
+                        ack[i] = byte;
+                        i += 1;
+                    }
+
+                    socket.send_to(&ack, src).unwrap();
+
+                    if amt < 512 {
+                        break;
+                    };
+                }
             }
-            Cmd::Put(args) => {
-                println!("Received put command")
+            Cmd::Put(argv) => {
+                println!("Received put command");
             }
             Cmd::Quit => break,
         }
