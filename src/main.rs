@@ -45,7 +45,6 @@ fn main() {
 
         let split_input: Vec<&str> = input.split(' ').collect();
 
-        println!("{}", split_input[0]);
         let cmd =
             Cmd::from_str(split_input[0], split_input[1..split_input.len()].to_vec()).unwrap();
 
@@ -53,7 +52,17 @@ fn main() {
             Cmd::Get(args) => {
                 println!("Received get command");
 
+                // TODO: iterate through all filenames in args instead of using only the first argument
                 // TODO: add match case for different args length. i.e. if user enters 1 filename, 2+ filenames, etc
+                // TODO: add support for the modes other than octet: netascii and mail
+
+                let mut packet = vec![0u8, 1u8];
+                let mut filename = String::from(args[0]);
+                filename.push_str("\0");
+                let mut mode = String::from("octet");
+                mode.push_str("\0");
+                packet.extend_from_slice(filename.as_bytes());
+                packet.extend_from_slice(mode.as_bytes());
             }
             Cmd::Put(args) => {
                 println!("Received put command")
