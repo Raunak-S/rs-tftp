@@ -49,6 +49,19 @@ fn get_data(packet: &[u8]) -> String {
     }
 }
 
+fn send_read_packet(args: &Cli, socket: &UdpSocket, file: &String, mode: &String) {
+    let mut packet = vec![0u8, 1u8];
+    let filename = &*file; 
+    filename.push_str("\0");
+    mode.push_str("\0");
+    packet.extend_from_slice(filename.as_bytes());
+    packet.extend_from_slice(mode.as_bytes());
+
+    socket
+        .send_to(&packet, format!("{}:{}", args.destination, args.port))
+        .unwrap();
+}
+
 fn main() {
     let args = Cli::from_args();
 
@@ -77,17 +90,9 @@ fn main() {
                 // TODO: add match case for different args length. i.e. if user enters 1 filename, 2+ filenames, etc
                 // TODO: add support for the modes other than octet: netascii and mail
 
-                let mut packet = vec![0u8, 1u8];
-                let mut filename = String::from(argv[0]);
-                filename.push_str("\0");
-                let mut mode = String::from("octet");
-                mode.push_str("\0");
-                packet.extend_from_slice(filename.as_bytes());
-                packet.extend_from_slice(mode.as_bytes());
-
-                socket
-                    .send_to(&packet, format!("{}:{}", args.destination, args.port))
-                    .unwrap();
+                let filename = String::from(argv[0]);
+                let mode = String::from("octet");
+                send_read_packet(&args, &socket, &filename, &mode); 
 
                 filename.pop().unwrap();
                 let mut file = File::create(filename).unwrap();
@@ -114,6 +119,8 @@ fn main() {
             }
             Cmd::Put(argv) => {
                 println!("Received put command");
+
+
             }
             Cmd::Quit => break,
         }
